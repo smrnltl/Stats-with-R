@@ -1,0 +1,269 @@
+```{r}
+#install packages
+
+install.packages(c("e1071", "ggplot2", "reshape2", "dplyr"))
+
+```
+
+```{r}
+#Load datasets
+df <- read.csv("D:/smaran/workspace/Stats-with-R/datasets/Salary_dataset.csv")
+cat("Dataset loaded:", nrow(df), "rows x", ncol(df), "columns\n")
+```
+```{r}
+head(df)
+```
+```{r}
+#show structure of dataset
+str(df)
+```
+
+
+```{r}
+#show summary statistics
+summary(df)
+```
+
+
+```{r}
+#Missing values
+cat("Missing values:")
+missing <- colSums(is.na(df))
+print(missing[missing > 0])
+```
+```{r}
+#Duplicate rows
+cat("\n Duplicate rows: \n")
+duplicate <- sum(duplicated(df))
+cat(duplicate, " duplicate rows found")
+```
+```{r}
+library(e1071)
+#Skewness of numerical features
+cat("\n Skewnewss Check: \n")
+
+skewed_features <- sapply(df, function(x) if(is.numeric(x)) skewness(x, na.rm=TRUE) else NA)
+#sapply(df, ...): Apply a function to each column of the dataframe df.
+#if(is.numeric(x)): Only compute skewness for numeric columns.
+#skewness(x, na.rm = TRUE): Calculate skewness using the skewness() function from the e1071 or moments package. 
+#na.rm = TRUE removes missing values before calculation.
+#Non-numeric columns get NA.
+
+skewed_features <- skewed_features[!is.na(skewed_features)]
+skewed_features <- sort(skewed_features, decreasing = TRUE)
+print(skewed_features)
+
+
+```
+```{r}
+#outliers detection
+#loop through each column in the dataframe
+for(col in names(df)){
+  #check if current column is numeric
+  if(is.numeric(df[[col]])){
+    
+    #calculate Q1
+    Q1 <- quantile(df[[col]], 0.25, na.rm = TRUE)
+    
+    #calculate Q3
+    Q3 <- quantile(df[[col]], 0.75, na.rm = TRUE)
+    
+    #calcualte interquartile range
+    IQR <- Q3 - Q1
+    
+    #count the number of outliers using IQR rule:
+    #outlier if value < Q1 - 1.5*IQR or value > Q3 + 1.5*IQR
+    outlier_count <- sum(df[[col]] < (Q1 - 1.5 * IQR) | df[[col]] > (Q3 + 1.5 * IQR))
+
+    #if there are any ouliers, print the count with the column name
+    if(outlier_count > 0) {
+      cat(col, ":", outlier_count, "outliers detected \n")
+    }
+    #if no outliers found, print a message indicating that
+    else{
+      cat(col, ": No significate outliers \n")
+    }
+    
+  }
+}
+```
+```{r}
+#correlation matrix (numeric columns)
+
+correlation <- cor(df, use="complete.obs")
+
+#melt and filter high correlation
+cor_matrix <- as.data.frame(as.table(abs(correlation)))
+cor_matrix <- cor_matrix[cor_matrix$Var1 != cor_matrix$Var2, ]
+print(cor_matrix)
+
+#cor_matrix <- cor_matrix[cor_matrix$Freq < 0.7, ]
+#print(cor_matrix)
+```
+
+```{r}
+#correlation recommendations:
+
+for(i in 1:nrow(cor_matrix)){
+  cat(cor_matrix$Var1[i], "&", cor_matrix$Var2[i], "have high correlation (", round(cor_matrix$Freq[i], 2), ") Suggest keeping ne or applying PCA\n")
+}
+
+```
+```{r}
+library(reshape2)
+library(ggplot2)
+
+#melt for heatmap
+cor_melt <- melt(correlation)
+
+#heatmap using ggplot2 with correlation values
+ggplot(cor_melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limit = c(-1,1)) +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 4) + #add correlations values on the heatmap
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text.y = element_text(size = 10),
+        axis.text.z = element_text(size = 10))
+
+```
+
+```{r}
+#check for column names
+#separate feature (X) and target (Y)
+#make sure 'YearsExperience' is correctly spelled
+X <- df[, "YearsExperience", drop = FALSE] #Feature; YearsExperience
+Y <- df$Salary # Target Salary
+print(X)
+print(Y)
+```
+
+```{r}
+install.packages("caTools")
+
+```
+```{r}
+library(caTools)
+
+#Split data into training and testing sets
+set.seed(42) #set seed for reproducibility
+split <- sample.split(Y, SplitRatio = 0.8) # 80% training, 20% testing
+
+# Create training and testing sets
+X_train <- X[split == TRUE, ]
+X_test <- X[split == FALSE, ]
+Y_train <- Y[split == TRUE]
+Y_test <- Y[split == FALSE]
+
+```
+
+```{r}
+X_train
+```
+```{r}
+Y_train
+```
+```{r}
+# Train a linear regression model
+# Assuming Y_train is the corresponding target variable 'Salary'
+# Combine X_train and Y_train into a data frame
+train_data <- data.frame(YearsExperience = X_train, Salary = Y_train)
+
+#Train a linear regression model
+model <- lm(Salary ~ YearsExperience, data = train_data)
+
+#View model summary
+summary(model)
+```
+
+```{r}
+# Assuming X_train and Y_train are already defined, and 'model' is the trained linear regression model
+
+#Calculate predicted values based on the model (best-fit line)
+train_data$Predicted <- predict(model, newdata = train_data)
+
+#Plot the actual data points and the regression line
+library(ggplot2)
+
+ggplot(train_data, aes(x = YearsExperience, y = Salary)) +
+  geom_point(color = "blue", label = "Actual Data") + # Actual data points
+  geom_line(aes(x = YearsExperience, y = Predicted), color = "red") + # Regression line (best-fit line)
+  labs(title = "Linear Regression: YearsExperience vs Salary",
+       x = "YearsExperience",
+       y = "Salary")+
+  theme_minimal()
+
+```
+
+```{r}
+# Make predictions on the test set
+Y_pred <- predict(model, newdata = data.frame(YearsExperience = X_test))
+
+#View the predictions
+print(Y_pred)
+
+# Print actual values (y_test) and predicted values (y_pred)
+results <- data.frame(Actual = Y_test, Predicted = Y_pred)
+
+print(results)
+```
+
+
+```{r}
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(Y_test - Y_pred))
+
+# Calculate Mean Squared Error (MSE)
+mse <- mean((Y_test - Y_pred)^2)
+
+# Calculate R-squared
+rss <- sum((Y_test - Y_pred)^2) # Residual sum of squares
+tss <- sum((Y_test - mean(Y_test)^2)) # Total sum of squares
+r2 <- 1 - (rss / tss)
+
+#Print evaluation metrics
+cat("MAE:", mae, "\n")
+cat("MSE:", mse, "\n")
+cat("R2 Score:", r2, "\n")
+
+```
+
+```{r}
+library(ggplot2)
+
+#Create a dataframe with both X (YearsExperience) and Y (Salary)
+data <- data.frame(YearsExperience = X, Salary = Y)
+
+#Create the plot
+ggplot(data, aes(x = YearsExperience, y = Salary)) +
+  geom_point(color = "blue", label = "Real Data") + #Plost original data points
+  geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "solid") + #Plot regression line
+  labs(title = "Linear Regression: YearsExperience vs Salary",
+       x = "YearsExperience",
+       y = "Salary") + 
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
